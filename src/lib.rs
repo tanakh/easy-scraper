@@ -9,11 +9,13 @@ pub struct Pattern(NodeRef);
 impl Pattern {
     pub fn new(s: &str) -> Pattern {
         let doc = filter_whitespace(parse_html().one(s)).unwrap();
+        // dbg!(doc.to_string());
         Pattern(doc)
     }
 
     pub fn matches(&self, s: &str) -> Vec<BTreeMap<String, String>> {
         let doc = filter_whitespace(parse_html().one(s)).unwrap();
+        // dbg!(doc.to_string());
         match_subtree(&doc, &self.0, false)
     }
 }
@@ -34,15 +36,16 @@ fn match_subtree(doc: &NodeRef, pattern: &NodeRef, exact: bool) -> Vec<BTreeMap<
     }
 
     if let (Some(e1), Some(e2)) = (doc.as_element(), pattern.as_element()) {
-        if e1.name == e2.name
-            && match_attributes(
+        if e1.name == e2.name {
+            if let Some(m1) = match_attributes(
                 e1.attributes.borrow().deref(),
                 e2.attributes.borrow().deref(),
-            )
-        {
-            let doc_cs = doc.children().collect::<Vec<_>>();
-            let pat_cs = pattern.children().collect::<Vec<_>>();
-            ret.append(&mut match_siblings(&doc_cs, &pat_cs));
+            ) {
+                let doc_cs = doc.children().collect::<Vec<_>>();
+                let pat_cs = pattern.children().collect::<Vec<_>>();
+                let m2 = match_siblings(&doc_cs, &pat_cs);
+                ret.append(&mut map_product(vec![m1], m2));
+            }
         }
     }
 
@@ -82,20 +85,18 @@ fn match_siblings(doc: &[NodeRef], pattern: &[NodeRef]) -> Vec<BTreeMap<String, 
 
     let mut ret = vec![];
 
-    // 1. all `pattern` nodes are contained in the one `doc` node
-
-    for d in doc.iter() {
-        ret.append(&mut match_descendants(d, pattern));
-    }
-
-    // 2. `pattern` nodes match consective element of `doc`
-
+    // 1. `pattern` nodes match consective element of `doc`
     for window in doc.windows(pattern.len()) {
         let mut t = vec![BTreeMap::<String, String>::new()];
         for (d, p) in window.iter().zip(pattern.iter()) {
             t = map_product(t, match_subtree(d, p, true));
         }
         ret.append(&mut t);
+    }
+
+    // 2. all `pattern` nodes are contained in the one `doc` node
+    for d in doc.iter() {
+        ret.append(&mut match_descendants(d, pattern));
     }
 
     ret
@@ -136,21 +137,29 @@ fn is_var(s: &str) -> Option<String> {
     }
 }
 
-fn match_attributes(a1: &Attributes, a2: &Attributes) -> bool {
+fn match_attributes(a1: &Attributes, a2: &Attributes) -> Option<BTreeMap<String, String>> {
     let a1 = &a1.map;
     let a2 = &a2.map;
 
     for (k2, v2) in a2.iter() {
         if let Some(v1) = a1.get(k2) {
-            if !is_subset(&v1.value, &v2.value) {
-                return false;
+            if let Some(var) = is_var(&v2.value) {
+                return Some(singleton(var, v1.value.trim().to_owned()));
+            } else if !is_subset(&v1.value, &v2.value) {
+                return None;
             }
         } else {
-            return false;
+            return None;
         }
     }
 
-    true
+    Some(BTreeMap::new())
+}
+
+fn singleton(key: String, val: String) -> BTreeMap<String, String> {
+    let mut ret = BTreeMap::new();
+    ret.insert(key, val);
+    ret
 }
 
 fn is_subset(s1: &str, s2: &str) -> bool {
@@ -308,4 +317,29 @@ fn test_attribute() {
     let pat = Pattern::new(r#"<div id="">{{foo}}</div>"#);
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 0);
+}
+
+#[test]
+fn test_attribute_pattern() {
+    let doc = r#"
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+    </head>
+    <body>
+        <a href="https://www.google.com">Google</a>
+        <p>
+            <a href="https://github.com">GitHub</a>
+        </p>
+    </body>
+</html>
+"#;
+
+    let pat = Pattern::new(r#"<a href="{{url}}">{{link}}</a>"#);
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 2);
+    assert_eq!(ms[0]["url"], "https://www.google.com");
+    assert_eq!(ms[0]["link"], "Google");
+    assert_eq!(ms[1]["url"], "https://github.com");
+    assert_eq!(ms[1]["link"], "GitHub");
 }
