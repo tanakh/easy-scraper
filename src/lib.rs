@@ -1,8 +1,8 @@
-use kuchiki::parse_html;
 use kuchiki::traits::*;
-use kuchiki::NodeRef;
+use kuchiki::{parse_html, Attributes, NodeRef};
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
+use std::ops::Deref;
 
 pub struct Pattern(NodeRef);
 
@@ -18,11 +18,7 @@ impl Pattern {
     }
 }
 
-pub fn match_subtree(
-    doc: &NodeRef,
-    pattern: &NodeRef,
-    exact: bool,
-) -> Vec<BTreeMap<String, String>> {
+fn match_subtree(doc: &NodeRef, pattern: &NodeRef, exact: bool) -> Vec<BTreeMap<String, String>> {
     let mut ret = vec![];
 
     if let (Some(_), Some(_)) = (doc.as_doctype(), pattern.as_doctype()) {
@@ -38,8 +34,12 @@ pub fn match_subtree(
     }
 
     if let (Some(e1), Some(e2)) = (doc.as_element(), pattern.as_element()) {
-        // TODO: check attribute
-        if e1.name == e2.name {
+        if e1.name == e2.name
+            && match_attributes(
+                e1.attributes.borrow().deref(),
+                e2.attributes.borrow().deref(),
+            )
+        {
             let doc_cs = doc.children().collect::<Vec<_>>();
             let pat_cs = pattern.children().collect::<Vec<_>>();
             ret.append(&mut match_siblings(&doc_cs, &pat_cs));
@@ -48,7 +48,6 @@ pub fn match_subtree(
 
     if let (Some(doc_text), Some(pat_text)) = (doc.as_text(), pattern.as_text()) {
         if let Some(var) = is_var(pat_text.borrow().as_ref()) {
-            // dbg!(&var, doc_text.borrow().trim());
             ret.push(BTreeMap::from_iter(vec![(
                 var,
                 doc_text.borrow().trim().to_owned(),
@@ -83,13 +82,13 @@ fn match_siblings(doc: &[NodeRef], pattern: &[NodeRef]) -> Vec<BTreeMap<String, 
 
     let mut ret = vec![];
 
-    // 1. all pattern is contained in one doc node
+    // 1. all `pattern` nodes are contained in the one `doc` node
 
     for d in doc.iter() {
         ret.append(&mut match_descendants(d, pattern));
     }
 
-    // 2. patterns maches consective element of doc
+    // 2. `pattern` nodes match consective element of `doc`
 
     for window in doc.windows(pattern.len()) {
         let mut t = vec![BTreeMap::<String, String>::new()];
@@ -135,6 +134,33 @@ fn is_var(s: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+fn match_attributes(a1: &Attributes, a2: &Attributes) -> bool {
+    let a1 = &a1.map;
+    let a2 = &a2.map;
+
+    for (k2, v2) in a2.iter() {
+        if let Some(v1) = a1.get(k2) {
+            if !is_subset(&v1.value, &v2.value) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn is_subset(s1: &str, s2: &str) -> bool {
+    let ws1 = s1.split_whitespace().collect::<Vec<_>>();
+    for w in s2.split_whitespace() {
+        if !ws1.contains(&w) {
+            return false;
+        }
+    }
+    true
 }
 
 fn filter_whitespace(node: NodeRef) -> Option<NodeRef> {
@@ -183,9 +209,8 @@ fn filter_whitespace(node: NodeRef) -> Option<NodeRef> {
 }
 
 #[test]
-fn test() {
-    let doc = parse_html().one(
-        r#"
+fn test_basic() {
+    let doc = r#"
 <!DOCTYPE html>
 <html lang="en">
     <head>
@@ -198,10 +223,9 @@ fn test() {
         </ul>
     </body>
 </html>
-"#,
-    );
+"#;
 
-    let pat = parse_html().one(
+    let pat = Pattern::new(
         r#"
 <ul>
     <li>{{hoge}}</li>
@@ -209,40 +233,79 @@ fn test() {
 "#,
     );
 
-    dbg!(&doc.to_string());
-    dbg!(&pat);
-
-    let pat = filter_whitespace(pat).unwrap();
-    dbg!(pat.to_string());
-
-    let ms = match_subtree(&doc, &pat, false);
-    dbg!(&ms);
-}
-
-#[test]
-fn test_hoge() {
-    let doc = include_str!("../hoge.html");
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 3);
+    assert_eq!(ms[0]["hoge"], "1");
+    assert_eq!(ms[1]["hoge"], "2");
+    assert_eq!(ms[2]["hoge"], "3");
 
     let pat = Pattern::new(
         r#"
-<div>
-    <section>
-        <h3>{{input-name}}</h3>
-        <pre>{{input}}</pre>
-    </section>
-</div>
-<div>
-    <section>
-        <h3>{{output-name}}</h3>
-        <pre>{{output}}</pre>
-    </section>
-</div>
+<ul>
+    <li>{{hoge}}</li>
+    <li>{{moge}}</li>
+</ul>
 "#,
     );
 
-    // let pat = filter_whitespace(pat).unwrap();
-    // dbg!(pat.to_string());
-    // dbg!(matches(&doc, &pat));
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 2);
+    assert_eq!(ms[0]["hoge"], "1");
+    assert_eq!(ms[0]["moge"], "2");
+    assert_eq!(ms[1]["hoge"], "2");
+    assert_eq!(ms[1]["moge"], "3");
+}
 
-    dbg!(pat.matches(doc));
+#[test]
+fn test_attribute() {
+    let doc = r#"
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+    </head>
+    <body>
+        <div class="foo bar baz">
+            hello
+        </div>
+    </body>
+</html>
+"#;
+
+    let pat = Pattern::new(r#"<div>{{foo}}</div>"#);
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 1);
+    assert_eq!(ms[0]["foo"], "hello");
+
+    let pat = Pattern::new(r#"<div class="">{{foo}}</div>"#);
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 1);
+    assert_eq!(ms[0]["foo"], "hello");
+
+    let pat = Pattern::new(r#"<div class="foo">{{foo}}</div>"#);
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 1);
+    assert_eq!(ms[0]["foo"], "hello");
+
+    let pat = Pattern::new(r#"<div class="foo bar">{{foo}}</div>"#);
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 1);
+    assert_eq!(ms[0]["foo"], "hello");
+
+    let pat = Pattern::new(r#"<div class="foo bar baz">{{foo}}</div>"#);
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 1);
+    assert_eq!(ms[0]["foo"], "hello");
+
+    let pat = Pattern::new(r#"<div class="baz foo bar">{{foo}}</div>"#);
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 1);
+    assert_eq!(ms[0]["foo"], "hello");
+
+    let pat = Pattern::new(r#"<div class="hoge">{{foo}}</div>"#);
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 0);
+
+    let pat = Pattern::new(r#"<div id="">{{foo}}</div>"#);
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 0);
 }

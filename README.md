@@ -1,2 +1,3 @@
 # easy-scraper
-Easy scraping library
+
+HTML scraping library focused on easy to use.

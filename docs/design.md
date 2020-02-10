@@ -69,3 +69,19 @@ Attributes matches superset of words
 ```html
 <div class="foo">{{foo}}</div>
 ```
+
+## variable
+
+```html
+<a href="{{url}}">hoge hoge</a>
+```
+
+## text node
+
+```html
+<a href="{{url}}">aaa {{foo}} bbb {{bar}}</a>
+```
+
+```html
+<a href="{{url}}">{{whole_sub_tree:*}}</a>
+```
