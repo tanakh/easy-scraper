@@ -141,10 +141,12 @@ fn match_attributes(a1: &Attributes, a2: &Attributes) -> Option<BTreeMap<String,
     let a1 = &a1.map;
     let a2 = &a2.map;
 
+    let mut ret = BTreeMap::new();
+
     for (k2, v2) in a2.iter() {
         if let Some(v1) = a1.get(k2) {
             if let Some(var) = is_var(&v2.value) {
-                return Some(singleton(var, v1.value.trim().to_owned()));
+                ret.insert(var, v1.value.trim().to_owned());
             } else if !is_subset(&v1.value, &v2.value) {
                 return None;
             }
@@ -153,7 +155,7 @@ fn match_attributes(a1: &Attributes, a2: &Attributes) -> Option<BTreeMap<String,
         }
     }
 
-    Some(BTreeMap::new())
+    Some(ret)
 }
 
 fn singleton(key: String, val: String) -> BTreeMap<String, String> {
