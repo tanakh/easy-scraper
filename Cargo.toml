@@ -3,6 +3,10 @@ name = "easy-scraper"
 version = "0.1.0"
 authors = ["Hideyuki Tanaka <tanaka.hideyuki@gmail.com>"]
 edition = "2018"
+license = "MIT"
+description = "HTML scraping library focused on easy to use"
+repository = "https://github.com/tanakh/easy-scraper"
+documentation = "https://docs.rs/easy-scraper"
 
 [dependencies]
 html5ever = "0.25"
