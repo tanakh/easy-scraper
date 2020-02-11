@@ -5,16 +5,51 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
 use std::rc::Rc;
 
+/// Pattern for matching HTML document
+///
+/// # Example
+///
+/// ```
+/// use easy_scraper::Pattern;
+///
+/// let pat = Pattern::new(r#"
+/// <ul>
+///     <li>{{hoge}}</li>
+/// </ul>
+/// "#).unwrap();
+///
+/// let ms = pat.matches(r#"
+/// <!DOCTYPE html>
+/// <html lang="en">
+///     <body>
+///         <ul>
+///             <li>1</li>
+///             <li>2</li>
+///             <li>3</li>
+///         </ul>
+///     </body>
+/// </html>
+/// "#);
+///
+/// assert_eq!(ms.len(), 3);
+/// assert_eq!(ms[0]["hoge"], "1");
+/// assert_eq!(ms[1]["hoge"], "2");
+/// assert_eq!(ms[2]["hoge"], "3");
+/// ```
+///
 pub struct Pattern(NodeRef);
 
 impl Pattern {
-    pub fn new(s: &str) -> Result<Pattern, String> {
-        let doc = filter_whitespace(parse_html_strict(s)?).unwrap();
+    /// Build pattern
+    pub fn new(pattern_str: &str) -> Result<Pattern, String> {
+        let doc = filter_whitespace(parse_html_strict(pattern_str)?).unwrap();
         Ok(Pattern(doc))
     }
 
-    pub fn matches(&self, s: &str) -> Vec<BTreeMap<String, String>> {
-        let doc = filter_whitespace(parse_html().one(s)).unwrap();
+    /// Match HTML document to pattern
+    /// Returns all matches.
+    pub fn matches(&self, html: &str) -> Vec<BTreeMap<String, String>> {
+        let doc = filter_whitespace(parse_html().one(html)).unwrap();
         match_subtree(&doc, &self.0, false)
     }
 }
@@ -193,6 +228,7 @@ fn match_descendants(doc: &NodeRef, pattern: &[NodeRef]) -> Vec<BTreeMap<String,
 
 fn match_text(doc: &str, pat: &str) -> Option<BTreeMap<String, String>> {
     if pat.find("{{").is_some() && pat.find("}}").is_some() {
+        // FIXME: cache regex
         let mut re_str = String::new();
 
         re_str += "^";
