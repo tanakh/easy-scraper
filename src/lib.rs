@@ -2,7 +2,6 @@ use kuchiki::traits::*;
 use kuchiki::{parse_html, parse_html_with_options, Attributes, NodeRef, ParseOpts};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::iter::FromIterator;
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -79,20 +78,25 @@ fn match_subtree(doc: &NodeRef, pattern: &NodeRef, exact: bool) -> Vec<BTreeMap<
         }
     }
 
-    if let (Some(doc_text), Some(pat_text)) = (doc.as_text(), pattern.as_text()) {
+    if let Some(pat_text) = pattern.as_text() {
         if let Some(var) = is_var(pat_text.borrow().as_ref()) {
-            ret.push(BTreeMap::from_iter(vec![(
-                var,
-                doc_text.borrow().trim().to_owned(),
-            )]));
-        } else if doc_text.borrow().trim() == pat_text.borrow().trim() {
-            ret.push(BTreeMap::new());
-        }
-    }
+            assert!(!var.whole);
 
-    // Do not search recursive text pattern.
-    if let Some(_) = pattern.as_text() {
-        return ret;
+            if let Some(doc_text) = doc.as_text() {
+                return vec![singleton(var.name, doc_text.borrow().trim().to_owned())];
+            }
+
+            return vec![];
+        }
+
+        if let Some(doc_text) = doc.as_text() {
+            if doc_text.borrow().trim() == pat_text.borrow().trim() {
+                return vec![BTreeMap::new()];
+            }
+        }
+
+        // Do not search recursive text pattern.
+        return vec![];
     }
 
     if !exact {
@@ -111,6 +115,18 @@ fn match_siblings(doc: &[NodeRef], pattern: &[NodeRef]) -> Vec<BTreeMap<String, 
 
     if doc.is_empty() {
         return vec![];
+    }
+
+    // special case: if `pattern` is whole variable, all `doc` nodes matches
+    if pattern.len() == 1 {
+        if let Some(pat_text) = pattern[0].as_text() {
+            if let Some(var) = is_var(pat_text.borrow().as_ref()) {
+                if var.whole {
+                    let texts = doc.iter().map(|r| r.to_string()).collect::<Vec<_>>();
+                    return vec![singleton(var.name, texts.concat())];
+                }
+            }
+        }
     }
 
     let mut ret = vec![];
@@ -190,10 +206,33 @@ fn map_product(
     ret
 }
 
-fn is_var(s: &str) -> Option<String> {
+struct Variable {
+    name: String,
+    whole: bool,
+}
+
+fn is_var(s: &str) -> Option<Variable> {
     let s = s.trim();
     if s.starts_with("{{") && s.ends_with("}}") {
-        Some(s[2..s.len() - 2].to_owned())
+        let var = &s[2..s.len() - 2];
+        let mut it = var.split(':');
+        let var = it.next()?;
+
+        if let Some(qual) = it.next() {
+            if qual == "*" {
+                Some(Variable {
+                    name: var.to_owned(),
+                    whole: true,
+                })
+            } else {
+                None
+            }
+        } else {
+            Some(Variable {
+                name: var.to_owned(),
+                whole: false,
+            })
+        }
     } else {
         None
     }
@@ -201,6 +240,12 @@ fn is_var(s: &str) -> Option<String> {
 
 fn is_skip(s: &str) -> bool {
     s.trim() == "..."
+}
+
+fn singleton(key: String, val: String) -> BTreeMap<String, String> {
+    let mut ret = BTreeMap::new();
+    ret.insert(key, val);
+    ret
 }
 
 fn match_attributes(a1: &Attributes, a2: &Attributes) -> Option<BTreeMap<String, String>> {
@@ -212,7 +257,8 @@ fn match_attributes(a1: &Attributes, a2: &Attributes) -> Option<BTreeMap<String,
     for (k2, v2) in a2.iter() {
         if let Some(v1) = a1.get(k2) {
             if let Some(var) = is_var(&v2.value) {
-                ret.insert(var, v1.value.trim().to_owned());
+                assert!(!var.whole);
+                ret.insert(var.name, v1.value.trim().to_owned());
             } else if !is_subset(&v1.value, &v2.value) {
                 return None;
             }
@@ -444,4 +490,26 @@ fn test_skip() {
     assert_eq!(ms[1]["moge"], "3");
     assert_eq!(ms[2]["hoge"], "2");
     assert_eq!(ms[2]["moge"], "3");
+}
+
+#[test]
+fn test_all_match() {
+    let doc = r#"
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+    </head>
+    <body>
+        Hello
+        <span>hoge</span>
+        World
+    </body>
+</html>
+"#;
+
+    let pat = Pattern::new(r#"<body>{{body:*}}</body>"#).unwrap();
+
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 1);
+    assert_eq!(ms[0]["body"], "Hello<span>hoge</span>World");
 }
