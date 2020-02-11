@@ -90,8 +90,8 @@ fn match_subtree(doc: &NodeRef, pattern: &NodeRef, exact: bool) -> Vec<BTreeMap<
         }
 
         if let Some(doc_text) = doc.as_text() {
-            if doc_text.borrow().trim() == pat_text.borrow().trim() {
-                return vec![BTreeMap::new()];
+            if let Some(m) = match_text(doc_text.borrow().trim(), pat_text.borrow().trim()) {
+                return vec![m];
             }
         }
 
@@ -189,6 +189,50 @@ fn match_descendants(doc: &NodeRef, pattern: &[NodeRef]) -> Vec<BTreeMap<String,
     let cs = doc.children().collect::<Vec<_>>();
     ret.append(&mut match_siblings(&cs, pattern));
     ret
+}
+
+fn match_text(doc: &str, pat: &str) -> Option<BTreeMap<String, String>> {
+    if pat.find("{{").is_some() && pat.find("}}").is_some() {
+        let mut re_str = String::new();
+
+        re_str += "^";
+
+        let mut vars = vec![];
+
+        let mut cur = pat;
+
+        while let Some(ix) = cur.find("{{") {
+            re_str += &cur[0..ix];
+            cur = &cur[ix + 2..];
+            let close = cur.find("}}");
+            assert!(close.is_some(), "Invalid text pattern: \"{}\"", pat);
+            let close = close.unwrap();
+            vars.push(&cur[0..close]);
+            re_str += "(.*)";
+            cur = &cur[close + 2..];
+        }
+
+        re_str += cur;
+        re_str += "$";
+
+        let re = regex::Regex::new(&re_str).unwrap();
+
+        if let Some(caps) = re.captures(doc) {
+            let mut ret = BTreeMap::new();
+            for i in 0..vars.len() {
+                ret.insert(vars[i].to_owned(), caps[i + 1].to_string());
+            }
+            Some(ret)
+        } else {
+            None
+        }
+    } else {
+        if doc == pat {
+            Some(BTreeMap::new())
+        } else {
+            None
+        }
+    }
 }
 
 fn map_product(
@@ -512,4 +556,38 @@ fn test_all_match() {
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 1);
     assert_eq!(ms[0]["body"], "Hello<span>hoge</span>World");
+}
+
+#[test]
+fn test_partial() {
+    let doc = r#"
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+    </head>
+    <body>
+        <ul>
+            <li>Test 1, 2</li>
+            <li>Test 3, 4</li>
+            <li>Test 5, 6</li>
+        </ul>
+    </body>
+</html>
+"#;
+
+    let pat = Pattern::new(
+        r#"
+<ul>Test {{foo}}, {{bar}}</ul>
+"#,
+    )
+    .unwrap();
+
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 3);
+    assert_eq!(ms[0]["foo"], "1");
+    assert_eq!(ms[0]["bar"], "2");
+    assert_eq!(ms[1]["foo"], "3");
+    assert_eq!(ms[1]["bar"], "4");
+    assert_eq!(ms[2]["foo"], "5");
+    assert_eq!(ms[2]["bar"], "6");
 }
