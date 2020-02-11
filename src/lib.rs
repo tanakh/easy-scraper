@@ -1,22 +1,52 @@
 use kuchiki::traits::*;
-use kuchiki::{parse_html, Attributes, NodeRef};
-use std::collections::BTreeMap;
+use kuchiki::{parse_html, parse_html_with_options, Attributes, NodeRef, ParseOpts};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::iter::FromIterator;
 use std::ops::Deref;
+use std::rc::Rc;
 
 pub struct Pattern(NodeRef);
 
 impl Pattern {
-    pub fn new(s: &str) -> Pattern {
-        let doc = filter_whitespace(parse_html().one(s)).unwrap();
-        // dbg!(doc.to_string());
-        Pattern(doc)
+    pub fn new(s: &str) -> Result<Pattern, String> {
+        let doc = filter_whitespace(parse_html_strict(s)?).unwrap();
+        Ok(Pattern(doc))
     }
 
     pub fn matches(&self, s: &str) -> Vec<BTreeMap<String, String>> {
         let doc = filter_whitespace(parse_html().one(s)).unwrap();
-        // dbg!(doc.to_string());
         match_subtree(&doc, &self.0, false)
+    }
+}
+
+fn parse_html_strict(s: &str) -> Result<NodeRef, String> {
+    let errs = Rc::new(RefCell::new(vec![]));
+    let ret = {
+        let mut opts = ParseOpts::default();
+        let errs = Rc::clone(&errs);
+        opts.on_parse_error = Some(Box::new(move |err| {
+            // eprintln!("HTML parse error: {:?}", err);
+            if err != "Unexpected token" {
+                errs.borrow_mut().push(err.to_string())
+            }
+        }));
+        parse_html_with_options(opts).one(s)
+    };
+    let errs = errs.deref().borrow().clone();
+    let mut m = BTreeSet::new();
+    let mut errs_uniq = vec![];
+    for err in errs {
+        if !m.contains(&err) {
+            m.insert(err.clone());
+            errs_uniq.push(err);
+        }
+    }
+
+    if errs_uniq.is_empty() {
+        Ok(ret)
+    } else {
+        Err(errs_uniq.join(", "))
     }
 }
 
@@ -242,7 +272,8 @@ fn test_basic() {
     <li>{{hoge}}</li>
 </ul>
 "#,
-    );
+    )
+    .unwrap();
 
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 3);
@@ -257,7 +288,8 @@ fn test_basic() {
     <li>{{moge}}</li>
 </ul>
 "#,
-    );
+    )
+    .unwrap();
 
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 2);
@@ -282,41 +314,41 @@ fn test_attribute() {
 </html>
 "#;
 
-    let pat = Pattern::new(r#"<div>{{foo}}</div>"#);
+    let pat = Pattern::new(r#"<div>{{foo}}</div>"#).unwrap();
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 1);
     assert_eq!(ms[0]["foo"], "hello");
 
-    let pat = Pattern::new(r#"<div class="">{{foo}}</div>"#);
+    let pat = Pattern::new(r#"<div class="">{{foo}}</div>"#).unwrap();
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 1);
     assert_eq!(ms[0]["foo"], "hello");
 
-    let pat = Pattern::new(r#"<div class="foo">{{foo}}</div>"#);
+    let pat = Pattern::new(r#"<div class="foo">{{foo}}</div>"#).unwrap();
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 1);
     assert_eq!(ms[0]["foo"], "hello");
 
-    let pat = Pattern::new(r#"<div class="foo bar">{{foo}}</div>"#);
+    let pat = Pattern::new(r#"<div class="foo bar">{{foo}}</div>"#).unwrap();
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 1);
     assert_eq!(ms[0]["foo"], "hello");
 
-    let pat = Pattern::new(r#"<div class="foo bar baz">{{foo}}</div>"#);
+    let pat = Pattern::new(r#"<div class="foo bar baz">{{foo}}</div>"#).unwrap();
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 1);
     assert_eq!(ms[0]["foo"], "hello");
 
-    let pat = Pattern::new(r#"<div class="baz foo bar">{{foo}}</div>"#);
+    let pat = Pattern::new(r#"<div class="baz foo bar">{{foo}}</div>"#).unwrap();
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 1);
     assert_eq!(ms[0]["foo"], "hello");
 
-    let pat = Pattern::new(r#"<div class="hoge">{{foo}}</div>"#);
+    let pat = Pattern::new(r#"<div class="hoge">{{foo}}</div>"#).unwrap();
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 0);
 
-    let pat = Pattern::new(r#"<div id="">{{foo}}</div>"#);
+    let pat = Pattern::new(r#"<div id="">{{foo}}</div>"#).unwrap();
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 0);
 }
@@ -337,7 +369,7 @@ fn test_attribute_pattern() {
 </html>
 "#;
 
-    let pat = Pattern::new(r#"<a href="{{url}}">{{link}}</a>"#);
+    let pat = Pattern::new(r#"<a href="{{url}}">{{link}}</a>"#).unwrap();
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 2);
     assert_eq!(ms[0]["url"], "https://www.google.com");

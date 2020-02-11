@@ -7,7 +7,8 @@ fn main() {
     <a href="{{url}}">{{title}}</a>
 </li>
 "#,
-    );
+    )
+    .unwrap();
     let doc = reqwest::blocking::get("https://news.yahoo.co.jp/")
         .unwrap()
         .text()

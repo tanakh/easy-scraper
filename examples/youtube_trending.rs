@@ -21,7 +21,8 @@ fn main() {
     最近急上昇
 </li>
 "##,
-    );
+    )
+    .unwrap();
 
     let doc = reqwest::blocking::get("https://www.youtube.com/feed/trending")
         .unwrap()
