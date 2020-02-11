@@ -293,7 +293,7 @@ White-space are ignored almost all positions.
 
 # Restrictions
 
-* Whole sub-tree patterns must be only one element of the parent node.
+* Whole sub-tree patterns must be the only one element of the parent node.
 
 This is valid:
 
