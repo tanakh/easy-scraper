@@ -226,8 +226,8 @@ this document is:
 
 ```json
 [
-    { "url": "https://www.google.com", title: "Google" },
-    { "url": "https://www.yahoo.com", title: "Yahoo" },
+    { "url": "https://www.google.com", "title": "Google" },
+    { "url": "https://www.yahoo.com", "title": "Yahoo" },
 ]
 ```
 
