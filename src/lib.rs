@@ -337,9 +337,22 @@ fn match_attributes(a1: &Attributes, a2: &Attributes) -> Option<BTreeMap<String,
     for (k2, v2) in a2.iter() {
         if let Some(v1) = a1.get(k2) {
             if let Some(var) = is_var(&v2.value) {
+                // Simple variable
                 assert!(!var.whole);
                 ret.insert(var.name, v1.value.trim().to_owned());
+            } else if {
+                let x = v2.value.find("{{");
+                let y = v2.value.find("}}");
+                x.is_some() && y.is_some() && x < y
+            } {
+                // Complex pattern
+                let t = match_text(&v1.value, &v2.value);
+                if t.is_none() {
+                    return None;
+                }
+                ret.append(&mut t.unwrap())
             } else if !is_subset(&v1.value, &v2.value) {
+                // Set of attribute
                 return None;
             }
         } else {
@@ -611,12 +624,7 @@ fn test_partial() {
 </html>
 "#;
 
-    let pat = Pattern::new(
-        r#"
-<ul>Test {{foo}}, {{bar}}</ul>
-"#,
-    )
-    .unwrap();
+    let pat = Pattern::new(r#"<ul>Test {{foo}}, {{bar}}</ul>"#).unwrap();
 
     let ms = pat.matches(doc);
     assert_eq!(ms.len(), 3);
@@ -626,4 +634,28 @@ fn test_partial() {
     assert_eq!(ms[1]["bar"], "4");
     assert_eq!(ms[2]["foo"], "5");
     assert_eq!(ms[2]["bar"], "6");
+}
+
+#[test]
+fn test_attr_partial() {
+    let doc = r#"
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+    </head>
+    <body>
+        <a href="/users/foo/info"></a>
+        <a href="/users/bar/info"></a>
+        <a href="/users/baz/info"></a>
+    </body>
+</html>
+"#;
+
+    let pat = Pattern::new(r#"<a href="/users/{{user}}/info"></a>"#).unwrap();
+
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 3);
+    assert_eq!(ms[0]["user"], "foo");
+    assert_eq!(ms[1]["user"], "bar");
+    assert_eq!(ms[2]["user"], "baz");
 }
