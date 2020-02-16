@@ -261,6 +261,34 @@ this document is:
 ]
 ```
 
+You can also write placeholders in atteibutes position.
+
+```html
+<ul>
+    <a href="/users/{{userid}}">{{username}}</a>
+</ul>
+```
+
+Match result for
+
+```html
+<ul>
+    <a href="/users/foo">Foo</a>
+    <a href="/users/bar">Bar</a>
+    <a href="/users/baz">Baz</a>
+</ul>
+```
+
+this document is:
+
+```json
+[
+    { "userid": "foo",  "username": "Foo" },
+    { "userid": "bar",  "username": "Bar" },
+    { "userid": "baz",  "username": "Baz" },
+]
+```
+
 ## Whole subtree pattern
 
 The pattern `{{var:*}}` matches to whole sub-tree as string.
