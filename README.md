@@ -1,3 +1,5 @@
+[![Workflow Status](https://github.com/tanakh/easy-scraper/workflows/Rust/badge.svg)](https://github.com/tanakh/easy-scraper/actions?query=workflow%3A%22Rust%22)
+
 # easy-scraper
 
 HTML scraping library focused on easy to use.
@@ -5,27 +7,12 @@ HTML scraping library focused on easy to use.
 In this library, matching patterns are described as HTML DOM trees.
 You can write patterns intuitive and extract desired contents easily.
 
-# Usage
-
-Add this line to your `Cargo.toml`:
-
-```toml
-[dependencies]
-easy-scraper = "0.1"
-```
-
-# Example
+## Example
 
 ```rust
 use easy_scraper::Pattern;
 
-let pat = Pattern::new(r#"
-<ul>
-    <li>{{foo}}</li>
-</ul>
-"#).unwrap();
-
-let ms = pat.matches(r#"
+let doc = r#"
 <!DOCTYPE html>
 <html lang="en">
     <body>
@@ -36,7 +23,15 @@ let ms = pat.matches(r#"
         </ul>
     </body>
 </html>
-"#);
+"#;
+
+let pat = Pattern::new(r#"
+<ul>
+    <li>{{foo}}</li>
+</ul>
+"#).unwrap();
+
+let ms = pat.matches(doc);
 
 assert_eq!(ms.len(), 3);
 assert_eq!(ms[0]["foo"], "1");
@@ -44,9 +39,9 @@ assert_eq!(ms[1]["foo"], "2");
 assert_eq!(ms[2]["foo"], "3");
 ```
 
-# Syntax
+## Syntax
 
-## DOM Tree
+### DOM Tree
 
 DOM trees are valid pattern. You can write placeholders in DOM trees.
 
@@ -98,7 +93,7 @@ So, match result is
 ]
 ```
 
-## Child
+### Child
 
 Child nodes are matched to any descendants
 because of subset rule.
@@ -121,7 +116,7 @@ matches against this document.
 </div>
 ```
 
-## Siblings
+### Siblings
 
 To avoid useless matches,
 siblings are restricted to match
@@ -188,7 +183,42 @@ Match result for this pattern is:
 ]
 ``````
 
-## Attribute
+If you want to match siblings as subsequence instead of consective substring,
+you can use the `subseq` pattern.
+
+```html
+<table>
+    <tr><th>AAA</th><td>aaa</td></tr>
+    <tr><th>BBB</th><td>bbb</td></tr>
+    <tr><th>CCC</th><td>ccc</td></tr>
+    <tr><th>DDD</th><td>ddd</td></tr>
+    <tr><th>EEE</th><td>eee</td></tr>
+</table>
+```
+
+For this document,
+
+```html
+<table subseq>
+    <tr><th>AAA</th><td>{{a}}</td></tr>
+    <tr><th>BBB</th><td>{{b}}</td></tr>
+    <tr><th>DDD</th><td>{{d}}</td></tr>
+</table>
+```
+
+this pattern matches.
+
+```json
+[
+    {
+        "a": "aaa",
+        "b": "bbb",
+        "d": "ddd"
+    }
+]
+```
+
+### Attribute
 
 You can specify attributes in patterns.
 Attribute patterns match when pattern's attributes are subset of document's attributes.
@@ -231,7 +261,7 @@ this document is:
 ]
 ```
 
-## Partial text-node pattern
+### Partial text-node pattern
 
 You can write placeholders arbitrary positions in text-node.
 
@@ -289,7 +319,7 @@ this document is:
 ]
 ```
 
-## Whole subtree pattern
+### Whole subtree pattern
 
 The pattern `{{var:*}}` matches to whole sub-tree as string.
 
@@ -315,11 +345,11 @@ this document is:
 ]
 ```
 
-## White-space
+### White-space
 
 White-space are ignored almost all positions.
 
-# Restrictions
+## Restrictions
 
 * Whole sub-tree patterns must be the only one element of the parent node.
 
@@ -346,3 +376,5 @@ There are invalid:
     <li></li>
 <ul>
 ```
+
+License: MIT
