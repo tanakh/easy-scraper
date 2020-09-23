@@ -215,7 +215,6 @@ this pattern matches.
 ]
 ```
 
-
 ## Attribute
 
 You can specify attributes in patterns.
