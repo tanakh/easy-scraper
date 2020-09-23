@@ -1,5 +1,354 @@
-use kuchiki::traits::*;
+/*!
+HTML scraping library focused on easy to use.
+
+In this library, matching patterns are described as HTML DOM trees.
+You can write patterns intuitive and extract desired contents easily.
+
+# Usage
+
+Add this line to your `Cargo.toml`:
+
+```toml
+[dependencies]
+easy-scraper = "0.1"
+```
+
+# Example
+
+```rust
+use easy_scraper::Pattern;
+
+let pat = Pattern::new(r#"
+<ul>
+    <li>{{foo}}</li>
+</ul>
+"#).unwrap();
+
+let ms = pat.matches(r#"
+<!DOCTYPE html>
+<html lang="en">
+    <body>
+        <ul>
+            <li>1</li>
+            <li>2</li>
+            <li>3</li>
+        </ul>
+    </body>
+</html>
+"#);
+
+assert_eq!(ms.len(), 3);
+assert_eq!(ms[0]["foo"], "1");
+assert_eq!(ms[1]["foo"], "2");
+assert_eq!(ms[2]["foo"], "3");
+```
+
+# Syntax
+
+## DOM Tree
+
+DOM trees are valid pattern. You can write placeholders in DOM trees.
+
+```html
+<ul>
+    <li>{{foo}}</li>
+</ul>
+```
+
+Patterns are matched if the pattern is subset of document.
+
+If the document is:
+
+```html
+<ul>
+    <li>1</li>
+    <li>2</li>
+    <li>3</li>
+</ul>
+```
+
+there trees are subset of this.
+
+```html
+<ul>
+    <li>1</li>
+</ul>
+```
+
+```html
+<ul>
+    <li>2</li>
+</ul>
+```
+
+```html
+<ul>
+    <li>3</li>
+</ul>
+```
+
+So, match result is
+
+```json
+[
+    { "foo": "1" },
+    { "foo": "2" },
+    { "foo": "3" },
+]
+```
+
+## Child
+
+Child nodes are matched to any descendants
+because of subset rule.
+
+For example, this pattern
+
+```html
+<div>
+    <li>{{id}}</li>
+</div>
+```
+
+matches against this document.
+
+```html
+<div>
+    <ul>
+        <li>1</li>
+    </ul>
+</div>
+```
+
+## Siblings
+
+To avoid useless matches,
+siblings are restricted to match
+only consective children of the same parent.
+
+For example, this pattern
+
+```html
+<ul>
+    <li>{{foo}}</li>
+    <li>{{bar}}</li>
+</ul>
+```
+
+does not match to this document.
+
+```html
+<ul>
+    <li>123</li>
+    <div>
+        <li>456</li>
+    </div>
+</ul>
+```
+
+And for this document,
+
+```html
+<ul>
+    <li>1</li>
+    <li>2</li>
+    <li>3</li>
+</ul>
+```
+
+match results are:
+
+```json
+[
+    { "foo": "1", "bar": "2" },
+    { "foo": "2", "bar": "3" },
+]
+```
+
+`{ "foo": 1, "bar": 3 }` is not contained, because there are not consective children.
+
+You can specify allow nodes between siblings by writing `...` in the pattern.
+
+```html
+<ul>
+    <li>{{foo}}</li>
+    ...
+    <li>{{bar}}</li>
+</ul>
+```
+
+Match result for this pattern is:
+
+```json
+[
+    { "foo": "1", "bar": "2" },
+    { "foo": "1", "bar": "3" },
+    { "foo": "2", "bar": "3" },
+]
+``````
+
+## Attribute
+
+You can specify attributes in patterns.
+Attribute patterns match when pattern's attributes are subset of document's attributes.
+
+This pattern
+
+```html
+<div class="attr1">
+    {{foo}}
+</div>
+```
+
+matches to this document.
+
+```html
+<div class="attr1 attr2">
+    Hello
+</div>
+```
+
+You can also write placeholders in attributes.
+
+```html
+<a href="{{url}}">{{title}}</a>
+```
+
+Match result for
+
+```html
+<a href="https://www.google.com">Google</a>
+<a href="https://www.yahoo.com">Yahoo</a>
+```
+
+this document is:
+
+```json
+[
+    { "url": "https://www.google.com", "title": "Google" },
+    { "url": "https://www.yahoo.com", "title": "Yahoo" },
+]
+```
+
+## Partial text-node pattern
+
+You can write placeholders arbitrary positions in text-node.
+
+```html
+<ul>
+    <li>A: {{a}}, B: {{b}}</li>
+</ul>
+```
+
+Match result for
+
+```html
+<ul>
+    <li>A: 1, B: 2</li>
+    <li>A: 3, B: 4</li>
+    <li>A: 5, B: 6</li>
+</ul>
+```
+
+this document is:
+
+```json
+[
+    { "a": "1",  "b": "2" },
+    { "a": "3",  "b": "4" },
+    { "a": "5",  "b": "6" },
+]
+```
+
+You can also write placeholders in atteibutes position.
+
+```html
+<ul>
+    <a href="/users/{{userid}}">{{username}}</a>
+</ul>
+```
+
+Match result for
+
+```html
+<ul>
+    <a href="/users/foo">Foo</a>
+    <a href="/users/bar">Bar</a>
+    <a href="/users/baz">Baz</a>
+</ul>
+```
+
+this document is:
+
+```json
+[
+    { "userid": "foo",  "username": "Foo" },
+    { "userid": "bar",  "username": "Bar" },
+    { "userid": "baz",  "username": "Baz" },
+]
+```
+
+## Whole subtree pattern
+
+The pattern `{{var:*}}` matches to whole sub-tree as string.
+
+```html
+<div>{{body:*}}</div>
+```
+
+Match result for
+
+```html
+<body>
+    Hello
+    <span>hoge</span>
+    World
+</body>
+```
+
+this document is:
+
+```json
+[
+    { "body": "Hello<span>hoge</span>World" }
+]
+```
+
+## White-space
+
+White-space are ignored almost all positions.
+
+# Restrictions
+
+* Whole sub-tree patterns must be the only one element of the parent node.
+
+This is valid:
+
+```html
+<div>
+    {{foo:*}}
+</div>
+```
+
+There are invalid:
+
+```html
+<div>
+    hoge {{foo:*}}
+</div>
+```
+
+```html
+<ul>
+    <li></li>
+    {{foo:*}}
+    <li></li>
+<ul>
+```
+*/
+
 use kuchiki::{parse_html, parse_html_with_options, Attributes, NodeRef, ParseOpts};
+use kuchiki::{traits::*, ExpandedName};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Deref;
@@ -90,13 +439,13 @@ fn match_subtree(doc: &NodeRef, pattern: &NodeRef, exact: bool) -> Vec<BTreeMap<
     if let (Some(_), Some(_)) = (doc.as_doctype(), pattern.as_doctype()) {
         let doc_cs = doc.children().collect::<Vec<_>>();
         let pat_cs = pattern.children().collect::<Vec<_>>();
-        ret.append(&mut match_siblings(&doc_cs, &pat_cs));
+        ret.append(&mut match_siblings(&doc_cs, &pat_cs, false));
     }
 
     if let (Some(_), Some(_)) = (doc.as_document(), pattern.as_document()) {
         let doc_cs = doc.children().collect::<Vec<_>>();
         let pat_cs = pattern.children().collect::<Vec<_>>();
-        ret.append(&mut match_siblings(&doc_cs, &pat_cs));
+        ret.append(&mut match_siblings(&doc_cs, &pat_cs, false));
     }
 
     if let (Some(e1), Some(e2)) = (doc.as_element(), pattern.as_element()) {
@@ -105,9 +454,29 @@ fn match_subtree(doc: &NodeRef, pattern: &NodeRef, exact: bool) -> Vec<BTreeMap<
                 e1.attributes.borrow().deref(),
                 e2.attributes.borrow().deref(),
             ) {
+                let subseq = e2
+                    .attributes
+                    .borrow()
+                    .deref()
+                    .map
+                    .keys()
+                    .any(|k| k.local.as_ref() == "subseq");
+
                 let doc_cs = doc.children().collect::<Vec<_>>();
                 let pat_cs = pattern.children().collect::<Vec<_>>();
-                let m2 = match_siblings(&doc_cs, &pat_cs);
+
+                // FIXME: this is hack for auto completion of <tbody> tag.
+                let pat_cs = if e2.name.local.as_ref() == "table"
+                    && pat_cs.len() == 1
+                    && pat_cs[0].as_element().map(|r| r.name.local.as_ref()) == Some("tbody")
+                {
+                    pat_cs[0].children().collect::<Vec<_>>()
+                } else {
+                    pat_cs
+                };
+
+                let m2 = match_siblings(&doc_cs, &pat_cs, subseq);
+
                 ret.append(&mut map_product(vec![m1], m2));
             }
         }
@@ -143,7 +512,11 @@ fn match_subtree(doc: &NodeRef, pattern: &NodeRef, exact: bool) -> Vec<BTreeMap<
     ret
 }
 
-fn match_siblings(doc: &[NodeRef], pattern: &[NodeRef]) -> Vec<BTreeMap<String, String>> {
+fn match_siblings(
+    doc: &[NodeRef],
+    pattern: &[NodeRef],
+    subseq: bool,
+) -> Vec<BTreeMap<String, String>> {
     if pattern.is_empty() {
         return vec![BTreeMap::new()];
     }
@@ -167,19 +540,30 @@ fn match_siblings(doc: &[NodeRef], pattern: &[NodeRef]) -> Vec<BTreeMap<String, 
     let mut ret = vec![];
 
     // 1. `pattern` nodes match consective element of `doc`
-    for i in 0..doc.len() {
-        ret.append(&mut match_siblings_direct(&doc[i..], pattern));
+    if subseq {
+        ret.append(&mut match_siblings_direct(&doc[..], pattern, subseq));
+    } else {
+        for i in 0..doc.len() {
+            ret.append(&mut match_siblings_direct(&doc[i..], pattern, subseq));
+        }
     }
 
     // 2. all `pattern` nodes are contained in the one `doc` node
     for d in doc.iter() {
-        ret.append(&mut match_descendants(d, pattern));
+        ret.append(&mut match_descendants(d, pattern, subseq));
     }
 
     ret
 }
 
-fn match_siblings_direct(doc: &[NodeRef], pattern: &[NodeRef]) -> Vec<BTreeMap<String, String>> {
+// Matches two siblings.
+// * `subseq` - If true, check if `pattern` is subsequence of `doc`.
+// Otherwise, check if `pattern` is substring of `doc`.
+fn match_siblings_direct(
+    doc: &[NodeRef],
+    pattern: &[NodeRef],
+    subseq: bool,
+) -> Vec<BTreeMap<String, String>> {
     let non_skip_len = pattern
         .iter()
         .filter(|r| {
@@ -203,26 +587,39 @@ fn match_siblings_direct(doc: &[NodeRef], pattern: &[NodeRef]) -> Vec<BTreeMap<S
         if is_skip(text.borrow().as_ref()) {
             let mut ret = vec![];
             for i in 0..doc.len() {
-                ret.append(&mut match_siblings_direct(&doc[i..], &pattern[1..]));
+                ret.append(&mut match_siblings_direct(&doc[i..], &pattern[1..], subseq));
             }
             return ret;
         }
     }
 
-    map_product(
-        match_subtree(&doc[0], &pattern[0], true),
-        match_siblings_direct(&doc[1..], &pattern[1..]),
-    )
+    let a = match_subtree(&doc[0], &pattern[0], true);
+
+    let mut ret = if !a.is_empty() {
+        map_product(a, match_siblings_direct(&doc[1..], &pattern[1..], subseq))
+    } else {
+        vec![]
+    };
+
+    if subseq {
+        ret.append(&mut match_siblings_direct(&doc[1..], pattern, subseq));
+    }
+
+    ret
 }
 
-fn match_descendants(doc: &NodeRef, pattern: &[NodeRef]) -> Vec<BTreeMap<String, String>> {
+fn match_descendants(
+    doc: &NodeRef,
+    pattern: &[NodeRef],
+    subseq: bool,
+) -> Vec<BTreeMap<String, String>> {
     if pattern.is_empty() {
         return vec![BTreeMap::new()];
     }
 
     let mut ret = vec![];
     let cs = doc.children().collect::<Vec<_>>();
-    ret.append(&mut match_siblings(&cs, pattern));
+    ret.append(&mut match_siblings(&cs, pattern, subseq));
     ret
 }
 
@@ -322,6 +719,11 @@ fn is_skip(s: &str) -> bool {
     s.trim() == "..."
 }
 
+fn is_special_attr(n: &ExpandedName) -> bool {
+    let s = n.local.as_ref();
+    s == "subseq"
+}
+
 fn singleton(key: String, val: String) -> BTreeMap<String, String> {
     let mut ret = BTreeMap::new();
     ret.insert(key, val);
@@ -335,6 +737,10 @@ fn match_attributes(a1: &Attributes, a2: &Attributes) -> Option<BTreeMap<String,
     let mut ret = BTreeMap::new();
 
     for (k2, v2) in a2.iter() {
+        if is_special_attr(k2) {
+            continue;
+        }
+
         if let Some(v1) = a1.get(k2) {
             if let Some(var) = is_var(&v2.value) {
                 // Simple variable
@@ -658,4 +1064,41 @@ fn test_attr_partial() {
     assert_eq!(ms[0]["user"], "foo");
     assert_eq!(ms[1]["user"], "bar");
     assert_eq!(ms[2]["user"], "baz");
+}
+
+#[test]
+fn test_table_skip() {
+    let doc = r#"
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+    </head>
+    <body>
+        <table>
+            <tr><th>AAA</th><td>aaa</td></tr>
+            <tr><th>BBB</th><td>bbb</td></tr>
+            <tr><th>CCC</th><td>ccc</td></tr>
+            <tr><th>DDD</th><td>ddd</td></tr>
+            <tr><th>EEE</th><td>eee</td></tr>
+        </table>
+    </body>
+</html>
+"#;
+
+    let pat = Pattern::new(
+        r#"
+<table subseq>
+    <tr><th>AAA</th><td>{{a}}</td></tr>
+    <tr><th>BBB</th><td>{{b}}</td></tr>
+    <tr><th>DDD</th><td>{{d}}</td></tr>
+</table>
+"#,
+    )
+    .unwrap();
+
+    let ms = pat.matches(doc);
+    assert_eq!(ms.len(), 1);
+    assert_eq!(ms[0]["a"], "aaa");
+    assert_eq!(ms[0]["b"], "bbb");
+    assert_eq!(ms[0]["d"], "ddd");
 }
