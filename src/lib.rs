@@ -4,27 +4,12 @@ HTML scraping library focused on easy to use.
 In this library, matching patterns are described as HTML DOM trees.
 You can write patterns intuitive and extract desired contents easily.
 
-# Usage
-
-Add this line to your `Cargo.toml`:
-
-```toml
-[dependencies]
-easy-scraper = "0.1"
-```
-
 # Example
 
 ```rust
 use easy_scraper::Pattern;
 
-let pat = Pattern::new(r#"
-<ul>
-    <li>{{foo}}</li>
-</ul>
-"#).unwrap();
-
-let ms = pat.matches(r#"
+let doc = r#"
 <!DOCTYPE html>
 <html lang="en">
     <body>
@@ -35,7 +20,15 @@ let ms = pat.matches(r#"
         </ul>
     </body>
 </html>
-"#);
+"#;
+
+let pat = Pattern::new(r#"
+<ul>
+    <li>{{foo}}</li>
+</ul>
+"#).unwrap();
+
+let ms = pat.matches(doc);
 
 assert_eq!(ms.len(), 3);
 assert_eq!(ms[0]["foo"], "1");
@@ -186,6 +179,42 @@ Match result for this pattern is:
     { "foo": "2", "bar": "3" },
 ]
 ``````
+
+If you want to match siblings as subsequence instead of consective substring,
+you can use the `subseq` pattern.
+
+```html
+<table>
+    <tr><th>AAA</th><td>aaa</td></tr>
+    <tr><th>BBB</th><td>bbb</td></tr>
+    <tr><th>CCC</th><td>ccc</td></tr>
+    <tr><th>DDD</th><td>ddd</td></tr>
+    <tr><th>EEE</th><td>eee</td></tr>
+</table>
+```
+
+For this document,
+
+```html
+<table subseq>
+    <tr><th>AAA</th><td>{{a}}</td></tr>
+    <tr><th>BBB</th><td>{{b}}</td></tr>
+    <tr><th>DDD</th><td>{{d}}</td></tr>
+</table>
+```
+
+this pattern matches.
+
+```json
+[
+    {
+        "a": "aaa",
+        "b": "bbb",
+        "d": "ddd"
+    }
+]
+```
+
 
 ## Attribute
 
