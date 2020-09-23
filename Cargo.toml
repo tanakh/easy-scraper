@@ -5,9 +5,11 @@ authors = ["Hideyuki Tanaka <tanaka.hideyuki@gmail.com>"]
 edition = "2018"
 license = "MIT"
 description = "HTML scraping library focused on easy to use"
+categories = ["web-programming"]
 keywords = ["html", "scraping"]
 repository = "https://github.com/tanakh/easy-scraper"
 documentation = "https://docs.rs/easy-scraper"
+readme = "README.md"
 
 [dependencies]
 html5ever = "0.25"
